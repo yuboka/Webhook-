@@ -1,5 +1,5 @@
 <?php
-$PAYSTACK_SECRET = "sk_live_xxxxxxxxxxxxxx";
+$PAYSTACK_SECRET = getenv("PAYSTACK_SECRET");
 
 // Read payload
 $input = file_get_contents("php://input");
@@ -12,7 +12,10 @@ if ($signature !== hash_hmac("sha512", $input, $PAYSTACK_SECRET)) {
 
 $data = json_decode($input, true);
 
-if ($data["event"] !== "charge.success") exit("Ignored");
+if (($data["event"] ?? "") !== "charge.success") {
+    http_response_code(200);
+    exit("Ignored");
+}
 
 // Payment data
 $ref = $data["data"]["reference"];
@@ -20,7 +23,7 @@ $amount = $data["data"]["amount"] / 100;
 $paidAt = $data["data"]["paid_at"];
 
 // SQLite (Railway)
-$db = new SQLite3("payments.db");
+$db = new SQLite3(__DIR__ . "/../payments.db");
 
 $stmt = $db->prepare("
     INSERT OR REPLACE INTO payments
@@ -34,4 +37,4 @@ $stmt->bindValue(":paid_at", $paidAt);
 $stmt->execute();
 
 http_response_code(200);
-echo "OK";
+echo "OK";echo "OK";
