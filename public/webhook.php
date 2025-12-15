@@ -1,40 +1,35 @@
 <?php
-$PAYSTACK_SECRET = getenv("PAYSTACK_SECRET");
+require "../core/db.php";
 
-// Read payload
-$input = file_get_contents("php://input");
-$signature = $_SERVER["HTTP_X_PAYSTACK_SIGNATURE"] ?? "";
+$secret = $_ENV['PAYSTACK_SECRET'];
 
-if ($signature !== hash_hmac("sha512", $input, $PAYSTACK_SECRET)) {
+$payload = file_get_contents("php://input");
+$signature = $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ?? '';
+
+if ($signature !== hash_hmac("sha512", $payload, $secret)) {
     http_response_code(401);
-    exit("Invalid signature");
+    exit;
 }
 
-$data = json_decode($input, true);
+$data = json_decode($payload, true);
+if ($data['event'] !== 'charge.success') exit;
 
-if (($data["event"] ?? "") !== "charge.success") {
-    http_response_code(200);
-    exit("Ignored");
-}
+$ref = $data['data']['reference'];
+$amount = $data['data']['amount'] / 100;
+$paidAt = $data['data']['paid_at'];
 
-// Payment data
-$ref = $data["data"]["reference"];
-$amount = $data["data"]["amount"] / 100;
-$paidAt = $data["data"]["paid_at"];
-
-// SQLite (Railway)
-$db = new SQLite3(__DIR__ . "/../payments.db");
-
-$stmt = $db->prepare("
-    INSERT OR REPLACE INTO payments
-    (reference, amount, status, paid_at)
-    VALUES (:ref, :amount, 'success', :paid_at)
+$stmt = $DB->prepare("
+INSERT INTO payments (reference, amount, status, paid_at)
+VALUES (:r, :a, 'success', :p)
+ON CONFLICT (reference)
+DO UPDATE SET status='success', paid_at=:p
 ");
 
-$stmt->bindValue(":ref", $ref);
-$stmt->bindValue(":amount", $amount);
-$stmt->bindValue(":paid_at", $paidAt);
-$stmt->execute();
+$stmt->execute([
+    ":r" => $ref,
+    ":a" => $amount,
+    ":p" => $paidAt
+]);
 
 http_response_code(200);
 echo "OK";
